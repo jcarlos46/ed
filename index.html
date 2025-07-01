@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Editor sem Backspace</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #111;
+      color: #eee;
+      font-family: monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+
+    #editor {
+      width: 80%;
+      max-width: 1000px;
+      min-height: 300px;
+      background: #222;
+      padding: 20px;
+      font-size: 32px;
+      line-height: 1.5em;
+      outline: none;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      border: none;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.4);
+      border-radius: 10px;
+    }
+
+    .faded {
+      color: #777;
+    }
+
+    .current-line {
+      color: #fff;
+    }
+
+    button {
+      margin-top: 20px;
+      background: #444;
+      color: #fff;
+      border: none;
+      padding: 12px 24px;
+      font-size: 18px;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+
+    button:hover {
+      background: #666;
+    }
+
+    #wordCount {
+      margin-top: 10px;
+      font-size: 16px;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="editor" contenteditable="true" spellcheck="false"></div>
+  <div id="wordCount">Palavras: 0</div>
+  <button id="export">Exportar como .txt</button>
+
+  <script>
+    const editor = document.getElementById('editor');
+    const exportBtn = document.getElementById('export');
+    const wordCount = document.getElementById('wordCount');
+    const maxLines = 5;
+
+    let lines = [];
+
+    editor.addEventListener('keydown', (e) => {
+      const forbiddenKeys = ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+
+      if (forbiddenKeys.includes(e.key)) {
+        e.preventDefault();
+        return;
+      }
+
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        lines.push('');
+        if (lines.length > maxLines - 1) {
+          lines.shift();
+        }
+        render();
+        return;
+      }
+
+      if (e.key.length === 1) {
+        if (lines.length === 0) lines.push('');
+        lines[lines.length - 1] += e.key;
+        render();
+        e.preventDefault();
+      }
+    });
+
+    function render() {
+      editor.innerHTML = '';
+
+      const start = Math.max(0, lines.length - (maxLines - 1));
+
+      for (let i = start; i < lines.length - 1; i++) {
+        const span = document.createElement('div');
+        span.className = 'faded';
+        span.textContent = lines[i];
+        editor.appendChild(span);
+      }
+
+      const currentLine = document.createElement('div');
+      currentLine.className = 'current-line';
+      currentLine.textContent = lines[lines.length - 1] || '';
+      editor.appendChild(currentLine);
+      placeCaretAtEnd(currentLine);
+
+      updateWordCount();
+    }
+
+    function placeCaretAtEnd(el) {
+      const range = document.createRange();
+      const sel = window.getSelection();
+      range.setStart(el, el.textContent.length);
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    exportBtn.addEventListener('click', () => {
+      const allText = lines.join('\n');
+      const blob = new Blob([allText], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'texto.txt';
+      a.click();
+
+      URL.revokeObjectURL(url);
+    });
+
+    function updateWordCount() {
+      const allText = lines.join(' ');
+      const words = allText.trim().split(/\s+/).filter(w => w.length > 0);
+      wordCount.textContent = `Palavras: ${words.length}`;
+    }
+
+    // Inicializa com uma linha vazia
+    lines.push('');
+    render();
+  </script>
+
+</body>
+</html>
+
