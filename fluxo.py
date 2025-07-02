@@ -2,65 +2,68 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
 from datetime import datetime
-import sys # Importar o módulo sys
+import sys
 
 class TextEditor:
     """
     Uma aplicação de editor de texto simples com uma interface gráfica
-    construída com a biblioteca Tkinter do Python, com um estilo simplificado,
-    sem menus, barras de rolagem ou rodapé.
+    construída com a biblioteca Tkinter do Python, com um estilo simplificado.
     Possui sobrescrita de caracteres, backspace/delete que apenas movem o cursor,
     salvamento automático, e impõe um limite de 80 caracteres por linha.
     Remove suporte a TAB e limita navegação apenas às setas.
     Permite abrir um arquivo existente como argumento na inicialização.
+    **Quebra de linha permitida APENAS após a última linha do documento ou
+    quando a linha atual atinge 80 caracteres.**
+    **O texto é visualmente centralizado na janela com um tema escuro.**
     """
-    def __init__(self, root, initial_file_path=None): # Adicionado initial_file_path
+    def __init__(self, root, initial_file_path=None):
         """Inicializa o editor de texto."""
         self.root = root
-        self.file_path = None  # Caminho para o ficheiro atualmente aberto
-        self.auto_save_id = None # Para controlar o agendamento do auto-save
+        self.file_path = None
+        self.auto_save_id = None
         self.setup_ui()
 
-        # --- Lógica para abrir arquivo inicial ou criar novo com timestamp ---
         if initial_file_path:
-            # Se um caminho de arquivo foi fornecido, tenta abri-lo
             self.open_file(file_path=initial_file_path)
-        elif self.file_path is None: # Se nenhum arquivo foi carregado (e não havia inicial_file_path)
+        elif self.file_path is None:
             timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
             new_filename = f"{timestamp}.txt"
-            # Define o caminho do arquivo no diretório atual do script
             self.file_path = os.path.join(os.getcwd(), new_filename)
-            # Salva o arquivo vazio imediatamente
             self.save_file()
-            # Embora a barra de título esteja oculta, é bom manter o controle interno
-            self.root.title(f"Fluxo - {new_filename}")
+            self.root.title(f"Editor de Texto - {new_filename}")
 
     def setup_ui(self):
         """Configura a interface gráfica do utilizador."""
-        # Não define um título para a janela (barra de título removida)
-        self.root.geometry("1024x600")
+        self.root.geometry("800x600")
+        
+        # --- NOVO: Define o fundo da janela principal para escuro ---
+        self.root.configure(bg="#2d2d2d")
+
+        # --- Frame para o texto que será centralizado ---
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_columnconfigure(2, weight=1)
+
+        content_frame = tk.Frame(self.root, bg="#2d2d2d")
+        content_frame.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
 
         # --- Área de Texto Principal ---
-        text_frame = tk.Frame(self.root)
-        text_frame.pack(expand=True, fill='both')
-
         self.text_area = tk.Text(
-            text_frame, 
-            wrap='none', # Importante: 'none' para não quebrar visualmente o texto em 80 colunas
-            undo=True, # Mantém o undo para Ctrl+Z
-            font=("Courier", 14), # Fonte Courier
+            content_frame,
+            wrap='none',
+            undo=True,
+            font=("Courier", 14),
             padx=10,
             pady=10,
-            background="#2d2d2d", 
-            insertbackground="white", 
-            foreground="#A0A0A0" # Cinza claro para as outras linhas
+            background="#2d2d2d",
+            insertbackground="white",
+            foreground="#A0A0A0"
         )
-        self.text_area.pack(side='left', expand=True, fill='both')
+        self.text_area.pack(expand=True, fill='both')
 
-        # Configura a tag para destacar a linha atual
+        # Configurações de tags (cores)
         self.text_area.tag_configure('current_line', background="#404040", foreground="white")
-        # Configura a tag para o aviso de limite de caracteres excedido (vermelho suave)
-        self.text_area.tag_configure('limit_exceeded', background="#663333", foreground="white") # Um tom de vermelho/vinho
+        self.text_area.tag_configure('limit_exceeded', background="#663333", foreground="white")
 
         # --- Bindings de Eventos e Atalhos ---
         self.text_area.bind('<KeyRelease>', self.update_status)
@@ -72,40 +75,91 @@ class TextEditor:
         self.root.bind("<Control-q>", self.exit_editor)
         self.root.bind("<Control-n>", self.new_file)
 
-        # Implementa o backspace para APENAS mover o cursor para trás
         self.text_area.bind('<BackSpace>', self.handle_backspace)
-        # Implementa o delete para APENAS mover o cursor para frente
         self.text_area.bind('<Delete>', self.handle_delete)
-        
-        # Implementa a sobrescrita para caracteres digitáveis e o bloqueio de linha
-        # Ignora eventos com a tecla Control pressionada
+        self.text_area.bind('<Return>', self.handle_enter_key)
         self.text_area.bind('<Key>', self.handle_key_press_for_overwrite)
-
-        # --- Desabilita TAB ---
-        # Apenas '<Tab>' é geralmente suficiente para cobrir tanto Tab quanto Shift+Tab
-        self.text_area.bind('<Tab>', self.handle_no_op) 
-
-        # --- Desabilita outras teclas de navegação além das setas ---
+        self.text_area.bind('<Tab>', self.handle_no_op)
         self.text_area.bind('<Home>', self.handle_no_op)
         self.text_area.bind('<End>', self.handle_no_op)
-        self.text_area.bind('<Prior>', self.handle_no_op) # PageUp
-        self.text_area.bind('<Next>', self.handle_no_op)  # PageDown
+        self.text_area.bind('<Prior>', self.handle_no_op)
+        self.text_area.bind('<Next>', self.handle_no_op)
         self.text_area.bind('<Control-Home>', self.handle_no_op)
         self.text_area.bind('<Control-End>', self.handle_no_op)
         self.text_area.bind('<Control-Left>', self.handle_no_op)
         self.text_area.bind('<Control-Right>', self.handle_no_op)
 
-
-        # --- Inicia o salvamento automático ---
         self.start_auto_save()
-
-        # Foca na área de texto e atualiza a UI inicial
         self.text_area.focus_set()
         self.update_status()
 
     def handle_no_op(self, event=None):
         """Função vazia para desabilitar o comportamento padrão de uma tecla."""
-        return "break" # Impede qualquer ação padrão
+        return "break"
+
+    def handle_enter_key(self, event=None):
+        """
+        Manipula a tecla Enter para permitir quebras de linha apenas:
+        1. No final do documento.
+        2. Quando a linha atual já atingiu 80 caracteres.
+        Caso contrário, move o cursor para o final da linha atual ou início da próxima.
+        """
+        MAX_LINE_LENGTH = 80
+
+        current_index = self.text_area.index(tk.INSERT)
+        line_num, col_num = map(int, current_index.split('.'))
+
+        line_start_index = f"{line_num}.0"
+        line_end_index_incl_newline = f"{line_num}.end"
+        line_content = self.text_area.get(line_start_index, line_end_index_incl_newline).replace('\n', '')
+        current_line_length = len(line_content)
+
+        # Verifica se estamos na última linha do documento
+        last_line_index = self.text_area.index(tk.END + "-1c linestart").split('.')[0]
+        is_last_line = (line_num == int(last_line_index))
+
+        # Se a linha atual atingiu 80 caracteres
+        if current_line_length >= MAX_LINE_LENGTH:
+            next_line_start = f"{line_num + 1}.0"
+            next_line_end = f"{line_num + 1}.end"
+            
+            # Verifica se a próxima linha existe e tem conteúdo
+            if self.text_area.compare(next_line_start, "<", tk.END):
+                next_line_content = self.text_area.get(next_line_start, next_line_end).replace('\n', '')
+                if next_line_content:  # Se há conteúdo na próxima linha
+                    # Vai para o início da próxima linha
+                    self.text_area.mark_set(tk.INSERT, next_line_start)
+                else:  # Se a próxima linha está vazia
+                    # Cria uma nova linha
+                    self.text_area.edit_separator()
+                    self.text_area.insert(tk.INSERT, '\n')
+            else:  # Se não há próxima linha
+                # Cria uma nova linha
+                self.text_area.edit_separator()
+                self.text_area.insert(tk.INSERT, '\n')
+            
+            self.update_status()
+            return "break"
+
+        # Se estamos na última linha e no final dela
+        if is_last_line and col_num == current_line_length:
+            self.text_area.edit_separator()
+            self.text_area.insert(tk.INSERT, '\n')
+            self.update_status()
+            return "break"
+
+        # Caso contrário, move o cursor
+        if col_num < current_line_length:
+            self.text_area.mark_set(tk.INSERT, line_end_index_incl_newline)
+        else:
+            next_line_start = f"{line_num + 1}.0"
+            if self.text_area.compare(next_line_start, "<", tk.END):
+                self.text_area.mark_set(tk.INSERT, next_line_start)
+            else:
+                self.text_area.mark_set(tk.INSERT, line_end_index_incl_newline)
+
+        self.update_status()
+        return "break"
 
     def start_auto_save(self):
         """Inicia o agendamento do salvamento automático."""
@@ -118,7 +172,7 @@ class TextEditor:
         """
         if self.has_changes() and self.file_path:
             self.save_file()
-        
+
         self.auto_save_id = self.root.after(5000, self.auto_save_file)
 
     def handle_backspace(self, event=None):
@@ -144,58 +198,54 @@ class TextEditor:
         """
         MAX_LINE_LENGTH = 80
 
-        # Remove o destaque de limite de TODAS as linhas antes de aplicar (para limpar estados antigos)
         self.text_area.tag_remove('limit_exceeded', '1.0', 'end')
 
-        # Verifica se a tecla Control NÃO está pressionada e se é um caractere imprimível
+        if event.state & 0x4:
+            if event.keysym in ['z', 'y']:
+                return None
+
         if not (event.state & 0x4) and event.char and len(event.char) == 1 and \
            event.keysym not in ['BackSpace', 'Delete', 'Left', 'Right', 'Up', 'Down', 'Return']:
-            
+
             current_index = self.text_area.index(tk.INSERT)
             line_start_index = f"{current_index.split('.')[0]}.0"
             line_content = self.text_area.get(line_start_index, current_index)
-            
+
             current_line_length = len(line_content)
 
-            # Se a linha já tem 80 caracteres ou mais
             if current_line_length >= MAX_LINE_LENGTH:
-                # Se a tecla pressionada NÃO é Enter, bloqueia a digitação
-                if event.keysym != 'Return':
-                    # Aplica o destaque de limite à linha atual
-                    self.text_area.tag_add('limit_exceeded', line_start_index, f"{current_index.split('.')[0]}.end")
-                    return "break" # Impede que o caractere seja inserido
-            
-            # Se a linha está dentro do limite ou se é a tecla Enter
-            # Lógica de sobrescrita (como antes)
+                self.text_area.tag_add('limit_exceeded', line_start_index, f"{current_index.split('.')[0]}.end")
+                return "break"
+
             char_at_cursor = self.text_area.get(current_index, f"{current_index}+1c")
             if char_at_cursor and char_at_cursor != '\n' and current_index != self.text_area.index(tk.END + "-1c"):
                 self.text_area.delete(current_index)
-            
-            return None # Deixa o Tkinter inserir o caractere normalmente
 
-        return None 
+            return None
+
+        return None
 
     def new_file(self, event=None):
         """Cria um novo ficheiro, limpando a área de texto."""
         if self.has_changes():
             if not messagebox.askyesno("Guardar Alterações?", "O ficheiro atual tem alterações não guardadas. Quer continuar?"):
                 return
-        
+
         self.text_area.delete(1.0, tk.END)
-        self.file_path = None 
+        self.file_path = None
         self.update_status()
 
-    def open_file(self, event=None, file_path=None): # Adicionado file_path como argumento opcional
+    def open_file(self, event=None, file_path=None):
         """Abre um ficheiro existente."""
-        if file_path is None: # Se não foi passado um caminho, pede ao usuário
+        if file_path is None:
             path = filedialog.askopenfilename(
                 filetypes=[("Ficheiros de Texto", "*.txt"), ("Todos os Ficheiros", "*.*")]
             )
             if not path:
                 return
-        else: # Se o caminho foi passado como argumento
+        else:
             path = file_path
-        
+
         try:
             with open(path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -206,9 +256,8 @@ class TextEditor:
             self.update_status()
         except FileNotFoundError:
             messagebox.showerror("Erro ao Abrir", f"O ficheiro não foi encontrado:\n{path}")
-            # Se o arquivo não existe, volta ao estado de "novo arquivo" ou cria um com timestamp
-            self.file_path = None # Garante que o estado seja de "nenhum arquivo aberto"
-            self.new_file() # Reinicia como um novo arquivo para evitar loop no salvamento automático
+            self.file_path = None
+            self.new_file()
         except Exception as e:
             messagebox.showerror("Erro ao Abrir", f"Não foi possível abrir o ficheiro:\n{e}")
 
@@ -234,7 +283,7 @@ class TextEditor:
         )
         if not path:
             return
-        
+
         self.file_path = path
         self.save_file()
 
@@ -242,41 +291,32 @@ class TextEditor:
         """Verifica se existem alterações não guardadas."""
         if not self.file_path:
             return len(self.text_area.get(1.0, "end-1c")) > 0
-        
+
         try:
             with open(self.file_path, 'r', encoding='utf-8') as f:
                 return self.text_area.get(1.0, "end-1c") != f.read()
         except FileNotFoundError:
-            # Se o arquivo não existe no disco (foi excluído externamente, por exemplo)
-            # mas o editor ainda aponta para ele, consideramos que há alterações a serem salvas (como um novo arquivo)
-            return True 
+            return True
         except Exception:
             return True
 
     def update_status(self, event=None):
         """Atualiza o destaque da linha atual e centraliza-a.
            Também gerencia o destaque de limite de linha."""
-        
-        # Remove o destaque anterior da linha atual
+
         self.text_area.tag_remove('current_line', '1.0', 'end')
-        
-        # Adiciona o destaque à linha atual
+
         current_line_index_str = self.text_area.index(tk.INSERT).split('.')[0]
         line_start_index = f"{current_line_index_str}.0"
         line_end_index = f"{current_line_index_str}.end"
         self.text_area.tag_add('current_line', line_start_index, line_end_index)
 
-        # Atualiza a verificação de limite de linha ao mover o cursor ou soltar tecla/botão
-        # Remove o destaque de limite de TODAS as linhas antes de aplicar (para limpar estados antigos)
         self.text_area.tag_remove('limit_exceeded', '1.0', 'end')
-        
-        # Re-verifica a linha atual para aplicar o destaque de limite se necessário
+
         current_line_content = self.text_area.get(line_start_index, line_end_index).replace('\n', '')
         if len(current_line_content) >= 80:
              self.text_area.tag_add('limit_exceeded', line_start_index, line_end_index)
 
-
-        # Centraliza a linha atual na tela
         self.text_area.yview_pickplace(tk.INSERT)
 
     def exit_editor(self, event=None):
@@ -292,11 +332,10 @@ class TextEditor:
 
 if __name__ == "__main__":
     main_window = tk.Tk()
-    
-    # Verifica se um caminho de arquivo foi passado como argumento
+
     file_to_open = None
     if len(sys.argv) > 1:
-        file_to_open = sys.argv[1] # O primeiro argumento após o nome do script
+        file_to_open = sys.argv[1]
 
     editor = TextEditor(main_window, initial_file_path=file_to_open)
     main_window.mainloop()
