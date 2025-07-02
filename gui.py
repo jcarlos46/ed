@@ -43,13 +43,21 @@ class FluxoEditor:
         """Cria a interface do usuário"""
         # Frame principal
         main_frame = tk.Frame(self.root, bg='#1a1a1a')
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Frame superior para espaçamento
+        top_spacer = tk.Frame(main_frame, bg='#1a1a1a')
+        top_spacer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        
+        # Frame central para conteúdo
+        content_frame = tk.Frame(main_frame, bg='#1a1a1a')
+        content_frame.pack(side=tk.TOP, fill=tk.X, padx=40)
         
         # Área de texto para histórico (últimas 4 linhas)
         self.history_text = tk.Text(
-            main_frame,
+            content_frame,
             height=4,
-            font=('Consolas', 14),
+            font=('Courier', 14),
             bg='#1a1a1a',
             fg='#666666',
             border=0,
@@ -58,29 +66,33 @@ class FluxoEditor:
             wrap=tk.WORD,
             cursor='arrow'
         )
-        self.history_text.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        self.history_text.pack(fill=tk.X, pady=(0, 20))
         
         # Label para linha atual
         self.current_label = tk.Label(
-            main_frame,
+            content_frame,
             text="",
-            font=('Consolas', 14, 'bold'),
+            font=('Courier', 14, 'bold'),
             bg='#1a1a1a',
             fg='#ffffff',
             anchor='w',
             justify='left'
         )
-        self.current_label.pack(fill=tk.X, pady=(0, 10))
+        self.current_label.pack(fill=tk.X, pady=(0, 20))
         
-        # Label de status (minimalista)
+        # Frame inferior para espaçamento
+        bottom_spacer = tk.Frame(main_frame, bg='#1a1a1a')
+        bottom_spacer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        
+        # Label de status (no fundo)
         self.status_label = tk.Label(
             main_frame,
             text="Pressione Escape para sair",
-            font=('Consolas', 10),
+            font=('Courier', 10),
             bg='#1a1a1a',
             fg='#444444'
         )
-        self.status_label.pack(side=tk.BOTTOM)
+        self.status_label.pack(side=tk.BOTTOM, pady=10)
         
         # Bind de eventos
         self.root.bind('<KeyPress>', self.on_key_press)
