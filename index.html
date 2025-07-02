@@ -1,162 +1,554 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt">
 <head>
-  <meta charset="UTF-8">
-  <title>Editor sem Backspace</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background: #111;
-      color: #eee;
-      font-family: monospace;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor de Texto</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-    #editor {
-      width: 80%;
-      max-width: 1000px;
-      min-height: 300px;
-      background: #222;
-      padding: 20px;
-      font-size: 32px;
-      line-height: 1.5em;
-      outline: none;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      border: none;
-      box-shadow: 0 0 15px rgba(0, 0, 0, 0.4);
-      border-radius: 10px;
-    }
+        body {
+            background-color: #2d2d2d;
+            font-family: 'Courier New', monospace;
+            height: 100vh;
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            grid-template-rows: 1fr;
+            padding: 20px;
+        }
 
-    .faded {
-      color: #777;
-    }
+        .content-frame {
+            grid-column: 2;
+            display: flex;
+            flex-direction: column;
+            width: 800px;
+            max-width: 90vw;
+        }
 
-    .current-line {
-      color: #fff;
-    }
+        .toolbar {
+            background-color: #404040;
+            padding: 10px;
+            border-radius: 5px 5px 0 0;
+            color: #A0A0A0;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
 
-    button {
-      margin-top: 20px;
-      background: #444;
-      color: #fff;
-      border: none;
-      padding: 12px 24px;
-      font-size: 18px;
-      cursor: pointer;
-      border-radius: 6px;
-    }
+        .file-info {
+            font-weight: bold;
+        }
 
-    button:hover {
-      background: #666;
-    }
+        .shortcuts {
+            font-size: 11px;
+            opacity: 0.7;
+        }
 
-    #wordCount {
-      margin-top: 10px;
-      font-size: 16px;
-      color: #aaa;
-    }
-  </style>
+        #editor {
+            background-color: #2d2d2d;
+            color: #A0A0A0;
+            border: 2px solid #404040;
+            border-top: none;
+            border-radius: 0 0 5px 5px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.4;
+            resize: none;
+            outline: none;
+            width: 100%;
+            height: 500px;
+            white-space: pre;
+            overflow-wrap: normal;
+            word-wrap: normal;
+            caret-color: white;
+        }
+
+        #editor:focus {
+            border-color: #666666;
+        }
+
+        .status-bar {
+            background-color: #404040;
+            padding: 5px 15px;
+            border-radius: 0 0 5px 5px;
+            color: #A0A0A0;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .limit-warning {
+            background-color: #663333 !important;
+            color: white !important;
+        }
+
+        .hidden-input {
+            position: absolute;
+            left: -9999px;
+            opacity: 0;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+        }
+
+        .modal-content {
+            background-color: #404040;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 5px;
+            width: 300px;
+            color: white;
+            text-align: center;
+        }
+
+        .modal button {
+            background-color: #666666;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            margin: 5px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        .modal button:hover {
+            background-color: #777777;
+        }
+
+        .modal input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            margin: 10px 0;
+            background-color: #2d2d2d;
+            border: 1px solid #666666;
+            border-radius: 3px;
+            color: white;
+        }
+    </style>
 </head>
 <body>
+    <div class="content-frame">
+        <div class="toolbar">
+            <div class="file-info">
+                <span id="filename">Documento Novo</span>
+                <span id="modified-indicator"></span>
+            </div>
+            <div class="shortcuts">
+                Ctrl+N: Novo | Ctrl+O: Abrir | Ctrl+S: Salvar | Ctrl+Q: Sair
+            </div>
+        </div>
+        
+        <textarea id="editor" spellcheck="false"></textarea>
+        
+        <div class="status-bar">
+            <span id="cursor-position">Linha: 1, Coluna: 1</span>
+            <span id="line-length">Caracteres na linha: 0/80</span>
+        </div>
+    </div>
 
-  <div id="editor" contenteditable="true" spellcheck="false"></div>
-  <div id="wordCount">Palavras: 0</div>
-  <button id="export">Exportar como .txt</button>
+    <!-- Input oculto para upload de arquivo -->
+    <input type="file" id="file-input" class="hidden-input" accept=".txt">
 
-  <script>
-    const editor = document.getElementById('editor');
-    const exportBtn = document.getElementById('export');
-    const wordCount = document.getElementById('wordCount');
-    const maxLines = 5;
+    <!-- Modal para salvar arquivo -->
+    <div id="save-modal" class="modal">
+        <div class="modal-content">
+            <h3>Salvar Arquivo</h3>
+            <input type="text" id="filename-input" placeholder="nome-do-arquivo.txt">
+            <br>
+            <button onclick="confirmSave()">Salvar</button>
+            <button onclick="closeSaveModal()">Cancelar</button>
+        </div>
+    </div>
 
-    let lines = [];
+    <!-- Modal de confirmação -->
+    <div id="confirm-modal" class="modal">
+        <div class="modal-content">
+            <p id="confirm-message"></p>
+            <button id="confirm-yes">Sim</button>
+            <button id="confirm-no">Não</button>
+        </div>
+    </div>
 
-    editor.addEventListener('keydown', (e) => {
-      const forbiddenKeys = ['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+    <script>
+        class TextEditor {
+            constructor() {
+                this.editor = document.getElementById('editor');
+                this.filename = 'documento-novo.txt';
+                this.originalContent = '';
+                this.autoSaveInterval = null;
+                this.cursorLine = 1;
+                this.cursorColumn = 1;
+                
+                this.setupEventListeners();
+                this.updateStatus();
+                this.startAutoSave();
+                this.editor.focus();
+            }
 
-      if (forbiddenKeys.includes(e.key)) {
-        e.preventDefault();
-        return;
-      }
+            setupEventListeners() {
+                // Eventos de teclado
+                this.editor.addEventListener('keydown', (e) => this.handleKeyDown(e));
+                this.editor.addEventListener('keyup', (e) => this.updateStatus());
+                this.editor.addEventListener('click', (e) => this.updateStatus());
+                this.editor.addEventListener('input', (e) => this.handleInput(e));
 
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        lines.push('');
-        if (lines.length > maxLines - 1) {
-          lines.shift();
+                // Atalhos do teclado
+                document.addEventListener('keydown', (e) => {
+                    if (e.ctrlKey) {
+                        switch(e.key) {
+                            case 'n':
+                                e.preventDefault();
+                                this.newFile();
+                                break;
+                            case 'o':
+                                e.preventDefault();
+                                this.openFile();
+                                break;
+                            case 's':
+                                e.preventDefault();
+                                this.saveFile();
+                                break;
+                            case 'q':
+                                e.preventDefault();
+                                this.exitEditor();
+                                break;
+                        }
+                    }
+                });
+
+                // Upload de arquivo
+                document.getElementById('file-input').addEventListener('change', (e) => {
+                    this.loadFile(e.target.files[0]);
+                });
+
+                // Prevenir comportamento padrão de certas teclas
+                this.editor.addEventListener('keydown', (e) => {
+                    const disabledKeys = ['Tab', 'Home', 'End', 'PageUp', 'PageDown'];
+                    if (disabledKeys.includes(e.key) || 
+                        (e.ctrlKey && ['Home', 'End', 'ArrowLeft', 'ArrowRight'].includes(e.key))) {
+                        e.preventDefault();
+                    }
+                });
+
+                // Prevenir fechar a janela sem confirmação
+                window.addEventListener('beforeunload', (e) => {
+                    if (this.hasChanges()) {
+                        e.preventDefault();
+                        e.returnValue = '';
+                    }
+                });
+            }
+
+            handleKeyDown(e) {
+                const MAX_LINE_LENGTH = 80;
+                
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.handleEnterKey();
+                    return;
+                }
+
+                if (e.key === 'Backspace') {
+                    e.preventDefault();
+                    this.handleBackspace();
+                    return;
+                }
+
+                if (e.key === 'Delete') {
+                    e.preventDefault();
+                    this.handleDelete();
+                    return;
+                }
+
+                // Verificar limite de caracteres por linha para caracteres normais
+                if (!e.ctrlKey && !e.altKey && e.key.length === 1) {
+                    const lines = this.editor.value.split('\n');
+                    const cursorPos = this.editor.selectionStart;
+                    const textBeforeCursor = this.editor.value.substring(0, cursorPos);
+                    const currentLineStart = textBeforeCursor.lastIndexOf('\n') + 1;
+                    const currentLineText = textBeforeCursor.substring(currentLineStart);
+
+                    if (currentLineText.length >= MAX_LINE_LENGTH) {
+                        e.preventDefault();
+                        this.showLineLimitWarning();
+                        return;
+                    }
+                }
+            }
+
+            handleInput(e) {
+                // Implementar sobrescrita de caracteres
+                if (e.inputType === 'insertText' && e.data && e.data.length === 1) {
+                    const cursorPos = this.editor.selectionStart - 1;
+                    const nextChar = this.editor.value[cursorPos + 1];
+                    
+                    if (nextChar && nextChar !== '\n') {
+                        // Remove o próximo caractere para simular sobrescrita
+                        const value = this.editor.value;
+                        this.editor.value = value.substring(0, cursorPos + 1) + value.substring(cursorPos + 2);
+                    }
+                }
+                
+                this.updateStatus();
+            }
+
+            handleEnterKey() {
+                const MAX_LINE_LENGTH = 80;
+                const cursorPos = this.editor.selectionStart;
+                const lines = this.editor.value.split('\n');
+                const textBeforeCursor = this.editor.value.substring(0, cursorPos);
+                const currentLineNumber = textBeforeCursor.split('\n').length - 1;
+                const currentLine = lines[currentLineNumber];
+                const currentLineStart = textBeforeCursor.lastIndexOf('\n') + 1;
+                const columnInLine = cursorPos - currentLineStart;
+
+                // Se a linha atual atingiu 80 caracteres
+                if (currentLine.length >= MAX_LINE_LENGTH) {
+                    if (currentLineNumber + 1 < lines.length) {
+                        // Mover para próxima linha existente
+                        const nextLineStart = this.editor.value.indexOf('\n', cursorPos) + 1;
+                        this.editor.selectionStart = this.editor.selectionEnd = nextLineStart;
+                    } else {
+                        // Criar nova linha
+                        this.editor.value = this.editor.value.substring(0, cursorPos) + '\n' + this.editor.value.substring(cursorPos);
+                        this.editor.selectionStart = this.editor.selectionEnd = cursorPos + 1;
+                    }
+                    this.updateStatus();
+                    return;
+                }
+
+                // Se estamos na última linha e no final dela
+                const isLastLine = currentLineNumber === lines.length - 1;
+                if (isLastLine && columnInLine === currentLine.length) {
+                    this.editor.value = this.editor.value.substring(0, cursorPos) + '\n' + this.editor.value.substring(cursorPos);
+                    this.editor.selectionStart = this.editor.selectionEnd = cursorPos + 1;
+                    this.updateStatus();
+                    return;
+                }
+
+                // Caso contrário, mover cursor
+                if (columnInLine < currentLine.length) {
+                    // Mover para final da linha atual
+                    this.editor.selectionStart = this.editor.selectionEnd = currentLineStart + currentLine.length;
+                } else {
+                    // Mover para início da próxima linha
+                    if (currentLineNumber + 1 < lines.length) {
+                        const nextLineStart = this.editor.value.indexOf('\n', cursorPos) + 1;
+                        this.editor.selectionStart = this.editor.selectionEnd = nextLineStart;
+                    }
+                }
+                this.updateStatus();
+            }
+
+            handleBackspace() {
+                const cursorPos = this.editor.selectionStart;
+                if (cursorPos > 0) {
+                    this.editor.selectionStart = this.editor.selectionEnd = cursorPos - 1;
+                }
+                this.updateStatus();
+            }
+
+            handleDelete() {
+                const cursorPos = this.editor.selectionStart;
+                if (cursorPos < this.editor.value.length) {
+                    this.editor.selectionStart = this.editor.selectionEnd = cursorPos + 1;
+                }
+                this.updateStatus();
+            }
+
+            showLineLimitWarning() {
+                this.editor.classList.add('limit-warning');
+                setTimeout(() => {
+                    this.editor.classList.remove('limit-warning');
+                }, 200);
+            }
+
+            updateStatus() {
+                const cursorPos = this.editor.selectionStart;
+                const textBeforeCursor = this.editor.value.substring(0, cursorPos);
+                const lines = textBeforeCursor.split('\n');
+                
+                this.cursorLine = lines.length;
+                this.cursorColumn = lines[lines.length - 1].length + 1;
+
+                document.getElementById('cursor-position').textContent = 
+                    `Linha: ${this.cursorLine}, Coluna: ${this.cursorColumn}`;
+
+                // Calcular comprimento da linha atual
+                const allLines = this.editor.value.split('\n');
+                const currentLineLength = allLines[this.cursorLine - 1] ? allLines[this.cursorLine - 1].length : 0;
+                const lengthDisplay = document.getElementById('line-length');
+                lengthDisplay.textContent = `Caracteres na linha: ${currentLineLength}/80`;
+                
+                if (currentLineLength >= 80) {
+                    lengthDisplay.style.color = '#ff6666';
+                } else {
+                    lengthDisplay.style.color = '#A0A0A0';
+                }
+
+                // Atualizar indicador de modificação
+                const modifiedIndicator = document.getElementById('modified-indicator');
+                if (this.hasChanges()) {
+                    modifiedIndicator.textContent = '*';
+                } else {
+                    modifiedIndicator.textContent = '';
+                }
+            }
+
+            newFile() {
+                if (this.hasChanges()) {
+                    this.showConfirmDialog('O arquivo atual tem alterações não salvas. Quer continuar?', () => {
+                        this.createNewFile();
+                    });
+                } else {
+                    this.createNewFile();
+                }
+            }
+
+            createNewFile() {
+                this.editor.value = '';
+                this.filename = 'documento-novo.txt';
+                this.originalContent = '';
+                document.getElementById('filename').textContent = this.filename;
+                this.updateStatus();
+                this.editor.focus();
+            }
+
+            openFile() {
+                if (this.hasChanges()) {
+                    this.showConfirmDialog('O arquivo atual tem alterações não salvas. Quer continuar?', () => {
+                        document.getElementById('file-input').click();
+                    });
+                } else {
+                    document.getElementById('file-input').click();
+                }
+            }
+
+            loadFile(file) {
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    this.editor.value = e.target.result;
+                    this.filename = file.name;
+                    this.originalContent = e.target.result;
+                    document.getElementById('filename').textContent = this.filename;
+                    this.updateStatus();
+                    this.editor.focus();
+                };
+                reader.readAsText(file);
+            }
+
+            saveFile() {
+                this.showSaveModal();
+            }
+
+            showSaveModal() {
+                document.getElementById('filename-input').value = this.filename;
+                document.getElementById('save-modal').style.display = 'block';
+                document.getElementById('filename-input').focus();
+            }
+
+            closeSaveModal() {
+                document.getElementById('save-modal').style.display = 'none';
+            }
+
+            confirmSave() {
+                const filename = document.getElementById('filename-input').value.trim();
+                if (!filename) {
+                    alert('Por favor, insira um nome para o arquivo.');
+                    return;
+                }
+
+                this.filename = filename;
+                const content = this.editor.value;
+                const blob = new Blob([content], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                this.originalContent = content;
+                document.getElementById('filename').textContent = filename;
+                this.closeSaveModal();
+                this.updateStatus();
+            }
+
+            hasChanges() {
+                return this.editor.value !== this.originalContent;
+            }
+
+            startAutoSave() {
+                this.autoSaveInterval = setInterval(() => {
+                    if (this.hasChanges() && this.filename !== 'documento-novo.txt') {
+                        // Em um ambiente real, aqui faria o salvamento automático
+                        console.log('Auto-save triggered');
+                    }
+                }, 5000);
+            }
+
+            showConfirmDialog(message, onConfirm) {
+                document.getElementById('confirm-message').textContent = message;
+                document.getElementById('confirm-modal').style.display = 'block';
+                
+                document.getElementById('confirm-yes').onclick = () => {
+                    document.getElementById('confirm-modal').style.display = 'none';
+                    onConfirm();
+                };
+                
+                document.getElementById('confirm-no').onclick = () => {
+                    document.getElementById('confirm-modal').style.display = 'none';
+                };
+            }
+
+            exitEditor() {
+                if (this.hasChanges()) {
+                    this.showConfirmDialog('Tem alterações não salvas. Quer sair mesmo assim?', () => {
+                        window.close();
+                    });
+                } else {
+                    window.close();
+                }
+            }
         }
-        render();
-        return;
-      }
 
-      if (e.key.length === 1) {
-        if (lines.length === 0) lines.push('');
-        lines[lines.length - 1] += e.key;
-        render();
-        e.preventDefault();
-      }
-    });
+        // Inicializar o editor quando a página carregar
+        window.addEventListener('DOMContentLoaded', () => {
+            new TextEditor();
+        });
 
-    function render() {
-      editor.innerHTML = '';
+        // Funções globais para os modais
+        function confirmSave() {
+            window.editor.confirmSave();
+        }
 
-      const start = Math.max(0, lines.length - (maxLines - 1));
+        function closeSaveModal() {
+            window.editor.closeSaveModal();
+        }
 
-      for (let i = start; i < lines.length - 1; i++) {
-        const span = document.createElement('div');
-        span.className = 'faded';
-        span.textContent = lines[i];
-        editor.appendChild(span);
-      }
-
-      const currentLine = document.createElement('div');
-      currentLine.className = 'current-line';
-      currentLine.textContent = lines[lines.length - 1] || '';
-      editor.appendChild(currentLine);
-      placeCaretAtEnd(currentLine);
-
-      updateWordCount();
-    }
-
-    function placeCaretAtEnd(el) {
-      const range = document.createRange();
-      const sel = window.getSelection();
-      range.setStart(el, el.textContent.length);
-      range.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-
-    exportBtn.addEventListener('click', () => {
-      const allText = lines.join('\n');
-      const blob = new Blob([allText], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'texto.txt';
-      a.click();
-
-      URL.revokeObjectURL(url);
-    });
-
-    function updateWordCount() {
-      const allText = lines.join(' ');
-      const words = allText.trim().split(/\s+/).filter(w => w.length > 0);
-      wordCount.textContent = `Palavras: ${words.length}`;
-    }
-
-    // Inicializa com uma linha vazia
-    lines.push('');
-    render();
-  </script>
-
+        // Tornar o editor acessível globalmente
+        window.addEventListener('DOMContentLoaded', () => {
+            window.editor = new TextEditor();
+        });
+    </script>
 </body>
 </html>
-
