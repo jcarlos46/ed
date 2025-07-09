@@ -36,14 +36,20 @@ class TypewriterSimulator:
         # Matriz de caracteres - cada posição pode ter múltiplos caracteres sobrepostos
         self.char_matrix = {}  # {(linha, coluna): [lista_de_caracteres]}
         
+        # Estado para caracteres compostos (dead keys)
+        self.dead_key = None  # Armazena o caractere morto atual
+        
         # Configurações da fonte
-        self.pil_font = None
-        self.pygame_font = None
-        self.loaded_pil_font_path = None
-        self.loaded_pygame_font_path = None
-        self.load_fonts()
-        print(f"PIL font loaded: {self.loaded_pil_font_path or type(self.pil_font)}")
-        print(f"Pygame font loaded: {self.loaded_pygame_font_path or self.pygame_font}")
+        try:
+            self.font = pygame.font.Font("assets/CourierPrime-Regular.ttf", self.font_size)
+        except:
+            try:
+                self.font = pygame.font.SysFont("Courier Prime", self.font_size)
+            except:
+                try:
+                    self.font = pygame.font.SysFont("Courier New", self.font_size)
+                except:
+                    self.font = pygame.font.Font(None, self.font_size)
         
         # Gerar sprites de caracteres
         self.char_sprites = self.generate_char_sprites()
@@ -55,58 +61,34 @@ class TypewriterSimulator:
         # Clock para controle de FPS
         self.clock = pygame.time.Clock()
         
-    def load_fonts(self):
-        """Carrega as fontes tanto para PIL quanto para pygame"""
-        font_paths = [
-            "assets/CourierPrime-Regular.ttf",
-        ]
-        
-        # Tentar carregar fonte PIL
-        for font_path in font_paths:
-            try:
-                self.pil_font = ImageFont.truetype(font_path, self.font_size)
-                # Se PIL conseguiu carregar, tentar pygame com o mesmo arquivo
-                try:
-                    self.pygame_font = pygame.font.Font(font_path, self.font_size)
-                    return  # Sucesso com ambas as fontes
-                except:
-                    pass
-            except:
-                continue
-
-        # Fallback para fontes do sistema
-        try:
-            self.pygame_font = pygame.font.SysFont("Courier Prime", self.font_size)
-        except:
-            try:
-                self.pygame_font = pygame.font.SysFont("Courier New", self.font_size)
-            except:
-                self.pygame_font = pygame.font.Font(None, self.font_size)
-        
-        # Fallback PIL
-        if self.pil_font is None:
-            self.pil_font = ImageFont.load_default()
-    
     def generate_char_sprites(self):
         """Gera sprites para todos os caracteres"""
         sprites = {}
         
-        # Caracteres para gerar sprites
+        # Caracteres básicos para gerar sprites
         chars = string.ascii_letters + string.digits + string.punctuation + " "
         
+        # Adicionar caracteres especiais comuns
+        special_chars = "áàâãäéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ"
+        chars += special_chars
+        
         for char in chars:
-            # Criar surface para o caractere
-            char_surface = pygame.Surface((self.char_width, self.line_height), pygame.SRCALPHA)
-            
-            # Renderizar caractere
-            if char != ' ':  # Não renderizar espaço
-                text_surface = self.pygame_font.render(char, True, self.text_color)
-                # Centralizar o caractere no sprite
-                x = (self.char_width - text_surface.get_width()) // 2
-                y = (self.line_height - text_surface.get_height()) // 2
-                char_surface.blit(text_surface, (x, y))
-            
-            sprites[char] = char_surface
+            try:
+                # Criar surface para o caractere
+                char_surface = pygame.Surface((self.char_width, self.line_height), pygame.SRCALPHA)
+                
+                # Renderizar caractere
+                if char != ' ':  # Não renderizar espaço
+                    text_surface = self.font.render(char, True, self.text_color)
+                    # Centralizar o caractere no sprite
+                    x = (self.char_width - text_surface.get_width()) // 2
+                    y = (self.line_height - text_surface.get_height()) // 2
+                    char_surface.blit(text_surface, (x, y))
+                
+                sprites[char] = char_surface
+            except:
+                # Se falhar ao renderizar o caractere, criar sprite vazio
+                sprites[char] = pygame.Surface((self.char_width, self.line_height), pygame.SRCALPHA)
             
         return sprites
     
@@ -119,6 +101,34 @@ class TypewriterSimulator:
         if (line, col) not in self.char_matrix:
             self.char_matrix[(line, col)] = []
         self.char_matrix[(line, col)].append(char)
+    
+    def handle_dead_key(self, char):
+        """Trata caracteres compostos (dead keys)"""
+        if self.dead_key is None:
+            # Primeiro caractere - verificar se é um dead key
+            if char == '~':
+                self.dead_key = '~'
+                return None  # Não adicionar ainda
+            else:
+                return char  # Caractere normal
+        else:
+            # Segundo caractere - combinar com dead key
+            if self.dead_key == '~':
+                combinations = {
+                    'a': 'ã',
+                    'o': 'õ',
+                    'n': 'ñ',
+                    'A': 'Ã',
+                    'O': 'Õ',
+                    'N': 'Ñ'
+                }
+                result = combinations.get(char, char)  # Se não encontrar combinação, usar o caractere normal
+                self.dead_key = None  # Resetar dead key
+                return result
+            else:
+                # Dead key não reconhecido, resetar
+                self.dead_key = None
+                return char
     
     def handle_events(self):
         for event in pygame.event.get():
@@ -136,6 +146,8 @@ class TypewriterSimulator:
                     # Nova linha - retorno do carro
                     self.cursor_line += 1
                     self.cursor_col = 0
+                    # Resetar dead key se houver
+                    self.dead_key = None
                     
                 elif event.key == pygame.K_BACKSPACE:
                     # Backspace apenas move o cursor para trás (não destrutivo)
@@ -144,6 +156,8 @@ class TypewriterSimulator:
                     elif self.cursor_line > 0:
                         self.cursor_line -= 1
                         self.cursor_col = self.max_chars_per_line - 1
+                    # Resetar dead key se houver
+                    self.dead_key = None
                         
                 elif event.key == pygame.K_LEFT:
                     # Mover cursor para esquerda
@@ -182,17 +196,35 @@ class TypewriterSimulator:
                     
                 else:
                     # Inserir caractere
-                    if event.unicode.isprintable():
-                        # Verificar se não excede o limite da linha
+                    if event.unicode and event.unicode.isprintable() and event.unicode != ' ':
+                        # Processar dead key
+                        final_char = self.handle_dead_key(event.unicode)
+                        
+                        if final_char is not None:  # Só adicionar se não for um dead key pendente
+                            # Verificar se não excede o limite da linha
+                            if self.cursor_col < self.max_chars_per_line:
+                                self.add_char_at_position(self.cursor_line, self.cursor_col, final_char)
+                                self.cursor_col += 1
+                            else:
+                                # Ir para próxima linha automaticamente
+                                self.cursor_line += 1
+                                self.cursor_col = 0
+                                self.add_char_at_position(self.cursor_line, self.cursor_col, final_char)
+                                self.cursor_col += 1
+                    
+                    elif event.key == pygame.K_SPACE:
+                        # Tratar espaço separadamente
                         if self.cursor_col < self.max_chars_per_line:
-                            self.add_char_at_position(self.cursor_line, self.cursor_col, event.unicode)
+                            self.add_char_at_position(self.cursor_line, self.cursor_col, ' ')
                             self.cursor_col += 1
                         else:
                             # Ir para próxima linha automaticamente
                             self.cursor_line += 1
                             self.cursor_col = 0
-                            self.add_char_at_position(self.cursor_line, self.cursor_col, event.unicode)
+                            self.add_char_at_position(self.cursor_line, self.cursor_col, ' ')
                             self.cursor_col += 1
+                        # Resetar dead key se houver
+                        self.dead_key = None
                         
         return True
     
@@ -215,6 +247,16 @@ class TypewriterSimulator:
             for char in chars:
                 if char in self.char_sprites:
                     self.screen.blit(self.char_sprites[char], (x, y))
+                else:
+                    # Para caracteres não pré-gerados, renderizar diretamente
+                    try:
+                        if char != ' ':
+                            text_surface = self.font.render(char, True, self.text_color)
+                            char_x = x + (self.char_width - text_surface.get_width()) // 2
+                            char_y = y + (self.line_height - text_surface.get_height()) // 2
+                            self.screen.blit(text_surface, (char_x, char_y))
+                    except:
+                        pass  # Ignorar caracteres que não podem ser renderizados
         
         # Desenhar cursor
         if self.cursor_visible:
@@ -279,6 +321,11 @@ class TypewriterSimulator:
             self.cursor_timer = 0
     
     def save_image(self):
+        # Gerar nome do arquivo com data e hora
+        now = datetime.now()
+        timestamp = now.strftime("%Y%m%d_%H%M%S")
+        filename = f"typewriter_output_{timestamp}.png"
+        
         # Calcular dimensões necessárias
         max_line = max([line for line, col in self.char_matrix.keys()] + [self.cursor_line])
         img_width = self.left_margin + self.right_margin + self.max_chars_per_line * self.char_width
@@ -288,6 +335,18 @@ class TypewriterSimulator:
         img = Image.new('RGB', (img_width, img_height), (40, 40, 40))
         draw = ImageDraw.Draw(img)
         
+        # Tentar usar uma fonte melhor para a imagem
+        try:
+            pil_font = ImageFont.truetype("CourierPrime-Regular.ttf", self.font_size)
+        except:
+            try:
+                pil_font = ImageFont.truetype("cour.ttf", self.font_size)  # Courier New no Windows
+            except:
+                try:
+                    pil_font = ImageFont.truetype("Courier New.ttf", self.font_size)
+                except:
+                    pil_font = ImageFont.load_default()
+        
         # Desenhar todos os caracteres na imagem
         for (line, col), chars in self.char_matrix.items():
             x = self.left_margin + col * self.char_width
@@ -296,11 +355,16 @@ class TypewriterSimulator:
             # Desenhar todos os caracteres sobrepostos
             for char in chars:
                 if char != ' ':  # Não desenhar espaços
-                    draw.text((x, y), char, fill=(240, 235, 220), font=self.pil_font)
+                    try:
+                        draw.text((x, y), char, fill=(240, 235, 220), font=pil_font)
+                    except:
+                        # Se falhar, tentar com fonte padrão
+                        try:
+                            draw.text((x, y), char, fill=(240, 235, 220))
+                        except:
+                            pass  # Ignorar caracteres que não podem ser desenhados
         
-        # Salvar imagem com data e hora
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"typewriter_{timestamp}.png"
+        # Salvar imagem
         img.save(filename)
         print(f"Imagem salva como {filename}")
     
