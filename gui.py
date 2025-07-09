@@ -1,237 +1,320 @@
-import tkinter as tk
-from tkinter import messagebox
+import pygame
 import sys
-import os
+from PIL import Image, ImageDraw, ImageFont
+import string
 from datetime import datetime
 
-class FluxoEditor:
+class TypewriterSimulator:
     def __init__(self):
-        self.root = tk.Tk()
-        self.setup_window()
-        self.setup_variables()
-        self.setup_ui()
-        self.load_file_if_provided()
+        pygame.init()
         
-    def setup_window(self):
-        """Configura a janela principal"""
-        self.root.title("Fluxo - Editor sem Backspace")
-        self.root.geometry("800x600")
-        self.root.configure(bg='#1a1a1a')
+        # Configurações da janela
+        self.width = 900
+        self.height = 700
+        self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
+        pygame.display.set_caption("Simulador de Máquina de Escrever")
         
-        # Remove decorações para visual minimalista
-        self.root.overrideredirect(False)  # Mantém barra de título para facilitar uso
+        # Cores
+        self.bg_color = (40, 40, 40)     # Fundo escuro
+        self.text_color = (240, 235, 220)  # Texto claro
+        self.cursor_color = (255, 0, 0)  # Cor do cursor
         
-        # Centraliza na tela
-        self.center_window()
+        # Configurações do texto
+        self.font_size = 18
+        self.char_width = 10  # Largura fixa dos caracteres (monospace) - diminuído
+        self.line_height = 24
+        self.left_margin = 80
+        self.top_margin = 80
+        self.right_margin = 80
+        self.bottom_margin = 80
+        self.max_chars_per_line = 80
         
-    def center_window(self):
-        """Centraliza a janela na tela"""
-        self.root.update_idletasks()
-        width = self.root.winfo_width()
-        height = self.root.winfo_height()
-        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.root.winfo_screenheight() // 2) - (height // 2)
-        self.root.geometry(f'{width}x{height}+{x}+{y}')
+        # Estado do cursor
+        self.cursor_line = 0
+        self.cursor_col = 0
         
-    def setup_variables(self):
-        """Inicializa variáveis do editor"""
-        self.lines = []
-        self.current_line = ""
-        self.filename = None
+        # Matriz de caracteres - cada posição pode ter múltiplos caracteres sobrepostos
+        self.char_matrix = {}  # {(linha, coluna): [lista_de_caracteres]}
         
-    def setup_ui(self):
-        """Cria a interface do usuário"""
-        # Frame principal
-        main_frame = tk.Frame(self.root, bg='#1a1a1a')
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # Configurações da fonte
+        self.pil_font = None
+        self.pygame_font = None
+        self.loaded_pil_font_path = None
+        self.loaded_pygame_font_path = None
+        self.load_fonts()
+        print(f"PIL font loaded: {self.loaded_pil_font_path or type(self.pil_font)}")
+        print(f"Pygame font loaded: {self.loaded_pygame_font_path or self.pygame_font}")
         
-        # Frame superior para espaçamento
-        top_spacer = tk.Frame(main_frame, bg='#1a1a1a')
-        top_spacer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        # Gerar sprites de caracteres
+        self.char_sprites = self.generate_char_sprites()
         
-        # Frame central para conteúdo
-        content_frame = tk.Frame(main_frame, bg='#1a1a1a')
-        content_frame.pack(side=tk.TOP, fill=tk.X, padx=40)
+        # Para o cursor piscante
+        self.cursor_visible = True
+        self.cursor_timer = 0
         
-        # Área de texto para histórico (últimas 4 linhas)
-        self.history_text = tk.Text(
-            content_frame,
-            height=4,
-            font=('Courier', 14),
-            bg='#1a1a1a',
-            fg='#666666',
-            border=0,
-            highlightthickness=0,
-            state=tk.DISABLED,
-            wrap=tk.WORD,
-            cursor='arrow'
-        )
-        self.history_text.pack(fill=tk.X, pady=(0, 20))
+        # Clock para controle de FPS
+        self.clock = pygame.time.Clock()
         
-        # Label para linha atual
-        self.current_label = tk.Label(
-            content_frame,
-            text="",
-            font=('Courier', 14, 'bold'),
-            bg='#1a1a1a',
-            fg='#ffffff',
-            anchor='w',
-            justify='left'
-        )
-        self.current_label.pack(fill=tk.X, pady=(0, 20))
+    def load_fonts(self):
+        """Carrega as fontes tanto para PIL quanto para pygame"""
+        font_paths = [
+            "assets/CourierPrime-Regular.ttf",
+        ]
         
-        # Frame inferior para espaçamento
-        bottom_spacer = tk.Frame(main_frame, bg='#1a1a1a')
-        bottom_spacer.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-        
-        # Label de status (no fundo)
-        self.status_label = tk.Label(
-            main_frame,
-            text="Pressione Escape para sair",
-            font=('Courier', 10),
-            bg='#1a1a1a',
-            fg='#444444'
-        )
-        self.status_label.pack(side=tk.BOTTOM, pady=10)
-        
-        # Bind de eventos
-        self.root.bind('<KeyPress>', self.on_key_press)
-        self.root.bind('<Return>', self.on_enter)
-        self.root.bind('<Escape>', self.on_escape)
-        
-        # Impede backspace e delete
-        self.root.bind('<BackSpace>', lambda e: "break")
-        self.root.bind('<Delete>', lambda e: "break")
-        
-        # Foco na janela para capturar teclas
-        self.root.focus_set()
-        
-    def create_filename(self):
-        """Cria nome de arquivo com timestamp"""
-        now = datetime.now()
-        return now.strftime("%d-%m-%Y-%H-%M-%S.txt")
-        
-    def load_file_if_provided(self):
-        """Carrega arquivo se fornecido via argumento"""
-        if len(sys.argv) > 1:
-            self.filename = sys.argv[1]
-            if not self.filename.endswith('.txt'):
-                self.filename += '.txt'
-                
-            if os.path.exists(self.filename):
-                try:
-                    with open(self.filename, 'r', encoding='utf-8') as f:
-                        self.lines = [line.rstrip('\n\r') for line in f.readlines()]
-                except Exception as e:
-                    messagebox.showerror("Erro", f"Erro ao carregar arquivo: {e}")
-        else:
-            self.filename = self.create_filename()
-            
-        # Cria arquivo se não existir
-        if not os.path.exists(self.filename):
+        # Tentar carregar fonte PIL
+        for font_path in font_paths:
             try:
-                with open(self.filename, 'w', encoding='utf-8') as f:
+                self.pil_font = ImageFont.truetype(font_path, self.font_size)
+                # Se PIL conseguiu carregar, tentar pygame com o mesmo arquivo
+                try:
+                    self.pygame_font = pygame.font.Font(font_path, self.font_size)
+                    return  # Sucesso com ambas as fontes
+                except:
                     pass
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao criar arquivo: {e}")
+            except:
+                continue
+
+        # Fallback para fontes do sistema
+        try:
+            self.pygame_font = pygame.font.SysFont("Courier Prime", self.font_size)
+        except:
+            try:
+                self.pygame_font = pygame.font.SysFont("Courier New", self.font_size)
+            except:
+                self.pygame_font = pygame.font.Font(None, self.font_size)
+        
+        # Fallback PIL
+        if self.pil_font is None:
+            self.pil_font = ImageFont.load_default()
+    
+    def generate_char_sprites(self):
+        """Gera sprites para todos os caracteres"""
+        sprites = {}
+        
+        # Caracteres para gerar sprites
+        chars = string.ascii_letters + string.digits + string.punctuation + " "
+        
+        for char in chars:
+            # Criar surface para o caractere
+            char_surface = pygame.Surface((self.char_width, self.line_height), pygame.SRCALPHA)
+            
+            # Renderizar caractere
+            if char != ' ':  # Não renderizar espaço
+                text_surface = self.pygame_font.render(char, True, self.text_color)
+                # Centralizar o caractere no sprite
+                x = (self.char_width - text_surface.get_width()) // 2
+                y = (self.line_height - text_surface.get_height()) // 2
+                char_surface.blit(text_surface, (x, y))
+            
+            sprites[char] = char_surface
+            
+        return sprites
+    
+    def get_char_at_position(self, line, col):
+        """Retorna a lista de caracteres na posição especificada"""
+        return self.char_matrix.get((line, col), [])
+    
+    def add_char_at_position(self, line, col, char):
+        """Adiciona um caractere na posição especificada (sobrepondo)"""
+        if (line, col) not in self.char_matrix:
+            self.char_matrix[(line, col)] = []
+        self.char_matrix[(line, col)].append(char)
+    
+    def handle_events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            
+            elif event.type == pygame.VIDEORESIZE:
+                # Redimensionar janela
+                self.width = event.w
+                self.height = event.h
+                self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
+            
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_RETURN:
+                    # Nova linha - retorno do carro
+                    self.cursor_line += 1
+                    self.cursor_col = 0
+                    
+                elif event.key == pygame.K_BACKSPACE:
+                    # Backspace apenas move o cursor para trás (não destrutivo)
+                    if self.cursor_col > 0:
+                        self.cursor_col -= 1
+                    elif self.cursor_line > 0:
+                        self.cursor_line -= 1
+                        self.cursor_col = self.max_chars_per_line - 1
+                        
+                elif event.key == pygame.K_LEFT:
+                    # Mover cursor para esquerda
+                    if self.cursor_col > 0:
+                        self.cursor_col -= 1
+                    elif self.cursor_line > 0:
+                        self.cursor_line -= 1
+                        self.cursor_col = self.max_chars_per_line - 1
+                        
+                elif event.key == pygame.K_RIGHT:
+                    # Mover cursor para direita
+                    if self.cursor_col < self.max_chars_per_line - 1:
+                        self.cursor_col += 1
+                    else:
+                        self.cursor_line += 1
+                        self.cursor_col = 0
+                        
+                elif event.key == pygame.K_UP:
+                    # Mover cursor para linha acima
+                    if self.cursor_line > 0:
+                        self.cursor_line -= 1
+                        
+                elif event.key == pygame.K_DOWN:
+                    # Mover cursor para linha abaixo
+                    self.cursor_line += 1
                 
-        self.update_display()
+                elif event.key == pygame.K_s and pygame.key.get_pressed()[pygame.K_LCTRL]:
+                    # Ctrl+S para salvar
+                    self.save_image()
+                    
+                elif event.key == pygame.K_TAB:
+                    # Tab move cursor para próxima posição de tabulação (múltiplo de 8)
+                    next_tab = ((self.cursor_col // 8) + 1) * 8
+                    if next_tab < self.max_chars_per_line:
+                        self.cursor_col = next_tab
+                    
+                else:
+                    # Inserir caractere
+                    if event.unicode.isprintable():
+                        # Verificar se não excede o limite da linha
+                        if self.cursor_col < self.max_chars_per_line:
+                            self.add_char_at_position(self.cursor_line, self.cursor_col, event.unicode)
+                            self.cursor_col += 1
+                        else:
+                            # Ir para próxima linha automaticamente
+                            self.cursor_line += 1
+                            self.cursor_col = 0
+                            self.add_char_at_position(self.cursor_line, self.cursor_col, event.unicode)
+                            self.cursor_col += 1
+                        
+        return True
+    
+    def draw(self):
+        # Limpar tela
+        self.screen.fill(self.bg_color)
         
-    def save_incremental(self, line):
-        """Salva uma linha incrementalmente"""
-        try:
-            with open(self.filename, 'a', encoding='utf-8') as f:
-                f.write(line + '\n')
-                f.flush()
-            return True
-        except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao salvar: {e}")
-            return False
+        # Desenhar grid de referência (opcional - para debug)
+        # self.draw_grid()
+        
+        # Desenhar margens da "folha"
+        self.draw_page_margins()
+        
+        # Desenhar todos os caracteres
+        for (line, col), chars in self.char_matrix.items():
+            x = self.left_margin + col * self.char_width
+            y = self.top_margin + line * self.line_height
             
-    def save_complete(self):
-        """Salva o arquivo completo"""
-        try:
-            with open(self.filename, 'w', encoding='utf-8') as f:
-                for line in self.lines:
-                    f.write(line + '\n')
-                if self.current_line.strip():
-                    f.write(self.current_line + '\n')
-                f.flush()
-            return True
-        except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao salvar: {e}")
-            return False
+            # Desenhar todos os caracteres sobrepostos na posição
+            for char in chars:
+                if char in self.char_sprites:
+                    self.screen.blit(self.char_sprites[char], (x, y))
+        
+        # Desenhar cursor
+        if self.cursor_visible:
+            cursor_x = self.left_margin + self.cursor_col * self.char_width
+            cursor_y = self.top_margin + self.cursor_line * self.line_height
+            pygame.draw.line(self.screen, self.cursor_color, 
+                           (cursor_x, cursor_y), 
+                           (cursor_x, cursor_y + self.line_height), 2)
+        
+        pygame.display.flip()
+    
+    def draw_page_margins(self):
+        """Desenha as margens da folha para mostrar os limites"""
+        # Calcular dimensões da área de texto
+        text_width = self.max_chars_per_line * self.char_width
+        text_height = 25 * self.line_height  # Altura para 25 linhas
+        
+        # Desenhar retângulo das margens
+        margin_color = (80, 80, 80)  # Cor das margens
+        
+        # Margem esquerda
+        pygame.draw.line(self.screen, margin_color, 
+                        (self.left_margin, self.top_margin), 
+                        (self.left_margin, self.top_margin + text_height), 1)
+        
+        # Margem direita
+        pygame.draw.line(self.screen, margin_color, 
+                        (self.left_margin + text_width, self.top_margin), 
+                        (self.left_margin + text_width, self.top_margin + text_height), 1)
+        
+        # Margem superior
+        pygame.draw.line(self.screen, margin_color, 
+                        (self.left_margin, self.top_margin), 
+                        (self.left_margin + text_width, self.top_margin), 1)
+        
+        # Margem inferior
+        pygame.draw.line(self.screen, margin_color, 
+                        (self.left_margin, self.top_margin + text_height), 
+                        (self.left_margin + text_width, self.top_margin + text_height), 1)
+    
+    def draw_grid(self):
+        """Desenha um grid para debug (opcional)"""
+        # Linhas verticais
+        for col in range(self.max_chars_per_line + 1):
+            x = self.left_margin + col * self.char_width
+            pygame.draw.line(self.screen, (200, 200, 200), 
+                           (x, self.top_margin), 
+                           (x, self.height - 100), 1)
+        
+        # Linhas horizontais
+        for line in range(20):  # Desenhar 20 linhas
+            y = self.top_margin + line * self.line_height
+            pygame.draw.line(self.screen, (200, 200, 200), 
+                           (self.left_margin, y), 
+                           (self.left_margin + self.max_chars_per_line * self.char_width, y), 1)
+    
+    def update_cursor(self):
+        # Fazer cursor piscar
+        self.cursor_timer += 1
+        if self.cursor_timer >= 30:  # Piscar a cada 30 frames
+            self.cursor_visible = not self.cursor_visible
+            self.cursor_timer = 0
+    
+    def save_image(self):
+        # Calcular dimensões necessárias
+        max_line = max([line for line, col in self.char_matrix.keys()] + [self.cursor_line])
+        img_width = self.left_margin + self.right_margin + self.max_chars_per_line * self.char_width
+        img_height = self.top_margin + self.bottom_margin + (max_line + 1) * self.line_height
+        
+        # Criar imagem PIL
+        img = Image.new('RGB', (img_width, img_height), (40, 40, 40))
+        draw = ImageDraw.Draw(img)
+        
+        # Desenhar todos os caracteres na imagem
+        for (line, col), chars in self.char_matrix.items():
+            x = self.left_margin + col * self.char_width
+            y = self.top_margin + line * self.line_height
             
-    def update_display(self):
-        """Atualiza a exibição com degradê"""
-        # Atualiza histórico com degradê
-        self.history_text.config(state=tk.NORMAL)
-        self.history_text.delete('1.0', tk.END)
+            # Desenhar todos os caracteres sobrepostos
+            for char in chars:
+                if char != ' ':  # Não desenhar espaços
+                    draw.text((x, y), char, fill=(240, 235, 220), font=self.pil_font)
         
-        # Mostra últimas 4 linhas com degradê
-        recent_lines = self.lines[-4:] if len(self.lines) >= 4 else self.lines
-        
-        # Cores do degradê (do mais transparente ao mais opaco)
-        fade_colors = ['#333333', '#444444', '#555555', '#666666']
-        
-        for i, line in enumerate(recent_lines):
-            color_index = i if i < len(fade_colors) else len(fade_colors) - 1
-            self.history_text.insert(tk.END, line + '\n')
-            
-            # Aplica cor do degradê
-            line_start = f"{i+1}.0"
-            line_end = f"{i+1}.end"
-            self.history_text.tag_add(f"fade_{i}", line_start, line_end)
-            self.history_text.tag_config(f"fade_{i}", foreground=fade_colors[color_index])
-            
-        self.history_text.config(state=tk.DISABLED)
-        
-        # Atualiza linha atual com cursor
-        cursor = "▋"
-        self.current_label.config(text=self.current_line + cursor)
-        
-    def on_key_press(self, event):
-        """Processa teclas pressionadas"""
-        char = event.char
-        
-        # Ignora teclas especiais e não imprimíveis
-        if not char or not char.isprintable():
-            return "break"
-            
-        # Adiciona caractere à linha atual
-        self.current_line += char
-        self.update_display()
-        return "break"
-        
-    def on_enter(self, event):
-        """Processa Enter - nova linha"""
-        # Adiciona linha atual ao histórico
-        self.lines.append(self.current_line)
-        
-        # Salva incrementalmente
-        self.save_incremental(self.current_line)
-        
-        # Limpa linha atual
-        self.current_line = ""
-        
-        # Atualiza display
-        self.update_display()
-        return "break"
-        
-    def on_escape(self, event):
-        """Processa Escape - sair"""
-        # Salva arquivo completo antes de sair
-        self.save_complete()
-        self.root.quit()
-        return "break"
-        
+        # Salvar imagem com data e hora
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"typewriter_{timestamp}.png"
+        img.save(filename)
+        print(f"Imagem salva como {filename}")
+    
     def run(self):
-        """Inicia o editor"""
-        try:
-            self.root.mainloop()
-        except KeyboardInterrupt:
-            self.save_complete()
-            
+        running = True
+        while running:
+            running = self.handle_events()
+            self.update_cursor()
+            self.draw()
+            self.clock.tick(60)
+        
+        pygame.quit()
+        sys.exit()
+
 if __name__ == "__main__":
-    editor = FluxoEditor()
-    editor.run()
+    simulator = TypewriterSimulator()
+    simulator.run()
