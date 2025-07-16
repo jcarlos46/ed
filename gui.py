@@ -3,6 +3,10 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 import string
 from datetime import datetime
+import json
+import os
+from tkinter import filedialog, messagebox
+import tkinter as tk
 
 class TypewriterSimulator:
     def __init__(self):
@@ -21,7 +25,7 @@ class TypewriterSimulator:
         
         # Configurações do texto
         self.font_size = 18
-        self.char_width = 10  # Largura fixa dos caracteres (monospace) - diminuído
+        self.char_width = 10  # Largura fixa dos caracteres (monospace)
         self.line_height = 24
         self.left_margin = 80
         self.top_margin = 80
@@ -39,9 +43,13 @@ class TypewriterSimulator:
         # Estado para caracteres compostos (dead keys)
         self.dead_key = None  # Armazena o caractere morto atual
         
+        # Estado do arquivo atual
+        self.current_file = None
+        self.is_modified = False
+        
         # Configurações da fonte
         try:
-            self.font = pygame.font.Font("assets/CourierPrime-Regular.ttf", self.font_size)
+            self.font = pygame.font.Font("assets/Pica.ttf", self.font_size)
         except:
             try:
                 self.font = pygame.font.SysFont("Courier Prime", self.font_size)
@@ -60,6 +68,10 @@ class TypewriterSimulator:
         
         # Clock para controle de FPS
         self.clock = pygame.time.Clock()
+        
+        # Inicializar Tkinter para diálogos de arquivo (oculto)
+        self.root = tk.Tk()
+        self.root.withdraw()  # Ocultar janela principal do Tkinter
         
     def generate_char_sprites(self):
         """Gera sprites para todos os caracteres"""
@@ -101,6 +113,189 @@ class TypewriterSimulator:
         if (line, col) not in self.char_matrix:
             self.char_matrix[(line, col)] = []
         self.char_matrix[(line, col)].append(char)
+        self.is_modified = True
+    
+    def clear_document(self):
+        """Limpa o documento atual"""
+        self.char_matrix = {}
+        self.cursor_line = 0
+        self.cursor_col = 0
+        self.current_file = None
+        self.is_modified = False
+        self.dead_key = None
+    
+    def populate_from_text(self, text):
+        """Popula a máquina com texto, simulando digitação"""
+        self.clear_document()
+        
+        line = 0
+        col = 0
+        
+        for char in text:
+            if char == '\n':
+                line += 1
+                col = 0
+            elif char == '\t':
+                # Tab para próxima posição de tabulação
+                next_tab = ((col // 8) + 1) * 8
+                if next_tab < self.max_chars_per_line:
+                    col = next_tab
+                else:
+                    line += 1
+                    col = 0
+            else:
+                if col >= self.max_chars_per_line:
+                    line += 1
+                    col = 0
+                
+                if char.isprintable():
+                    self.add_char_at_position(line, col, char)
+                    col += 1
+        
+        self.cursor_line = line
+        self.cursor_col = col
+        self.is_modified = False  # Arquivo carregado não conta como modificado
+    
+    def load_text_file(self):
+        """Carrega um arquivo de texto"""
+        try:
+            file_path = filedialog.askopenfilename(
+                title="Abrir arquivo de texto",
+                filetypes=[
+                    ("Arquivos de texto", "*.txt"),
+                    ("Todos os arquivos", "*.*")
+                ]
+            )
+            
+            if file_path:
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    content = file.read()
+                    self.populate_from_text(content)
+                    self.current_file = file_path
+                    filename = os.path.basename(file_path)
+                    pygame.display.set_caption(f"Simulador de Máquina de Escrever - {filename}")
+        except Exception as e:
+            print(f"Erro ao carregar arquivo: {str(e)}")
+    
+    def save_state_file(self):
+        """Salva o estado atual do simulador"""
+        try:
+            file_path = filedialog.asksaveasfilename(
+                title="Salvar estado do simulador",
+                defaultextension=".typewriter",
+                filetypes=[
+                    ("Arquivos do Simulador", "*.typewriter"),
+                    ("Todos os arquivos", "*.*")
+                ]
+            )
+            
+            if file_path:
+                state = {
+                    'char_matrix': {f"{k[0]},{k[1]}": v for k, v in self.char_matrix.items()},
+                    'cursor_line': self.cursor_line,
+                    'cursor_col': self.cursor_col,
+                    'max_chars_per_line': self.max_chars_per_line
+                }
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(state, f, indent=2, ensure_ascii=False)
+                
+                self.current_file = file_path
+                self.is_modified = False
+                filename = os.path.basename(file_path)
+                pygame.display.set_caption(f"Simulador de Máquina de Escrever - {filename}")
+        except Exception as e:
+            print(f"Erro ao salvar: {str(e)}")
+    
+    def load_state_file(self):
+        """Carrega um estado salvo do simulador"""
+        try:
+            file_path = filedialog.askopenfilename(
+                title="Abrir estado do simulador",
+                filetypes=[
+                    ("Arquivos do Simulador", "*.typewriter"),
+                    ("Todos os arquivos", "*.*")
+                ]
+            )
+            
+            if file_path:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    state = json.load(f)
+                
+                # Restaurar matriz de caracteres
+                self.char_matrix = {}
+                for pos_str, chars in state['char_matrix'].items():
+                    line, col = map(int, pos_str.split(','))
+                    self.char_matrix[(line, col)] = chars
+                
+                # Restaurar cursor
+                self.cursor_line = state['cursor_line']
+                self.cursor_col = state['cursor_col']
+                
+                # Restaurar configurações se existirem
+                if 'max_chars_per_line' in state:
+                    self.max_chars_per_line = state['max_chars_per_line']
+                
+                self.current_file = file_path
+                self.is_modified = False
+                filename = os.path.basename(file_path)
+                pygame.display.set_caption(f"Simulador de Máquina de Escrever - {filename}")
+        except Exception as e:
+            print(f"Erro ao carregar estado: {str(e)}")
+    
+    def export_to_text(self):
+        """Exporta o conteúdo atual para um arquivo de texto"""
+        try:
+            file_path = filedialog.asksaveasfilename(
+                title="Exportar para texto",
+                defaultextension=".txt",
+                filetypes=[
+                    ("Arquivos de texto", "*.txt"),
+                    ("Todos os arquivos", "*.*")
+                ]
+            )
+            
+            if file_path:
+                # Encontrar dimensões do documento
+                if not self.char_matrix:
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write("")
+                    return
+                
+                max_line = max(pos[0] for pos in self.char_matrix.keys())
+                
+                lines = []
+                for line_num in range(max_line + 1):
+                    line_chars = []
+                    max_col = -1
+                    
+                    # Encontrar última coluna com conteúdo nesta linha
+                    for pos in self.char_matrix.keys():
+                        if pos[0] == line_num:
+                            max_col = max(max_col, pos[1])
+                    
+                    # Construir linha
+                    if max_col >= 0:
+                        for col in range(max_col + 1):
+                            chars = self.char_matrix.get((line_num, col), [])
+                            if chars:
+                                # Usar o último caractere se houver sobreposição
+                                line_chars.append(chars[-1])
+                            else:
+                                line_chars.append(' ')
+                    
+                    lines.append(''.join(line_chars).rstrip())
+                
+                # Remover linhas vazias do final
+                while lines and not lines[-1]:
+                    lines.pop()
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write('\n'.join(lines))
+                
+                filename = os.path.basename(file_path)
+        except Exception as e:
+            print(f"Erro ao exportar: {str(e)}")
     
     def handle_dead_key(self, char):
         """Trata caracteres compostos (dead keys)"""
@@ -142,12 +337,15 @@ class TypewriterSimulator:
                 self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
             
             elif event.type == pygame.KEYDOWN:
+                keys = pygame.key.get_pressed()
+                
                 if event.key == pygame.K_RETURN:
                     # Nova linha - retorno do carro
                     self.cursor_line += 1
                     self.cursor_col = 0
                     # Resetar dead key se houver
                     self.dead_key = None
+                    self.is_modified = True
                     
                 elif event.key == pygame.K_BACKSPACE:
                     # Backspace apenas move o cursor para trás (não destrutivo)
@@ -184,15 +382,43 @@ class TypewriterSimulator:
                     # Mover cursor para linha abaixo
                     self.cursor_line += 1
                 
-                elif event.key == pygame.K_s and pygame.key.get_pressed()[pygame.K_LCTRL]:
-                    # Ctrl+S para salvar
-                    self.save_image()
+                # Atalhos de teclado
+                elif event.key == pygame.K_n and keys[pygame.K_LCTRL]:
+                    # Ctrl+N - Novo documento
+                    self.clear_document()
+                    pygame.display.set_caption("Simulador de Máquina de Escrever")
+                    
+                elif event.key == pygame.K_o and keys[pygame.K_LCTRL]:
+                    # Ctrl+O - Abrir arquivo
+                    if keys[pygame.K_LSHIFT]:
+                        # Ctrl+Shift+O - Abrir estado do simulador
+                        self.load_state_file()
+                    else:
+                        # Ctrl+O - Abrir arquivo de texto
+                        self.load_text_file()
+                    
+                elif event.key == pygame.K_s and keys[pygame.K_LCTRL]:
+                    # Ctrl+S - Salvar
+                    if keys[pygame.K_LSHIFT]:
+                        # Ctrl+Shift+S - Salvar estado
+                        self.save_state_file()
+                    elif keys[pygame.K_LALT]:
+                        # Ctrl+Alt+S - Exportar para texto
+                        self.export_to_text()
+                    else:
+                        # Ctrl+S - Salvar como imagem
+                        self.save_image()
                     
                 elif event.key == pygame.K_TAB:
                     # Tab move cursor para próxima posição de tabulação (múltiplo de 8)
                     next_tab = ((self.cursor_col // 8) + 1) * 8
                     if next_tab < self.max_chars_per_line:
                         self.cursor_col = next_tab
+                    self.is_modified = True
+                    
+                elif event.key == pygame.K_F1:
+                    # F1 - Mostrar ajuda
+                    self.show_help()
                     
                 else:
                     # Inserir caractere
@@ -201,39 +427,42 @@ class TypewriterSimulator:
                         final_char = self.handle_dead_key(event.unicode)
                         
                         if final_char is not None:  # Só adicionar se não for um dead key pendente
-                            # Verificar se não excede o limite da linha
+                            # Verificar se não excede o limite da linha - PARAR no final
                             if self.cursor_col < self.max_chars_per_line:
                                 self.add_char_at_position(self.cursor_line, self.cursor_col, final_char)
                                 self.cursor_col += 1
-                            else:
-                                # Ir para próxima linha automaticamente
-                                self.cursor_line += 1
-                                self.cursor_col = 0
-                                self.add_char_at_position(self.cursor_line, self.cursor_col, final_char)
-                                self.cursor_col += 1
+                            # Se chegou no limite, simplesmente não adiciona o caractere
+                            # e não move o cursor (simula travamento da máquina)
                     
                     elif event.key == pygame.K_SPACE:
                         # Tratar espaço separadamente
                         if self.cursor_col < self.max_chars_per_line:
                             self.add_char_at_position(self.cursor_line, self.cursor_col, ' ')
                             self.cursor_col += 1
-                        else:
-                            # Ir para próxima linha automaticamente
-                            self.cursor_line += 1
-                            self.cursor_col = 0
-                            self.add_char_at_position(self.cursor_line, self.cursor_col, ' ')
-                            self.cursor_col += 1
+                        # Se chegou no limite, simplesmente não adiciona o espaço
+                        # e não move o cursor
+                        
                         # Resetar dead key se houver
                         self.dead_key = None
                         
         return True
     
+    def show_help(self):
+        """Mostra os atalhos de teclado disponíveis"""
+        help_text = """Atalhos:
+Ctrl+N: Novo documento
+Ctrl+O: Abrir arquivo de texto
+Ctrl+Shift+O: Abrir estado do simulador
+Ctrl+S: Salvar como imagem
+Ctrl+Shift+S: Salvar estado
+Ctrl+Alt+S: Exportar para texto
+F1: Mostrar ajuda"""
+        
+        print(help_text)
+    
     def draw(self):
         # Limpar tela
         self.screen.fill(self.bg_color)
-        
-        # Desenhar grid de referência (opcional - para debug)
-        # self.draw_grid()
         
         # Desenhar margens da "folha"
         self.draw_page_margins()
@@ -297,22 +526,6 @@ class TypewriterSimulator:
                         (self.left_margin, self.top_margin + text_height), 
                         (self.left_margin + text_width, self.top_margin + text_height), 1)
     
-    def draw_grid(self):
-        """Desenha um grid para debug (opcional)"""
-        # Linhas verticais
-        for col in range(self.max_chars_per_line + 1):
-            x = self.left_margin + col * self.char_width
-            pygame.draw.line(self.screen, (200, 200, 200), 
-                           (x, self.top_margin), 
-                           (x, self.height - 100), 1)
-        
-        # Linhas horizontais
-        for line in range(20):  # Desenhar 20 linhas
-            y = self.top_margin + line * self.line_height
-            pygame.draw.line(self.screen, (200, 200, 200), 
-                           (self.left_margin, y), 
-                           (self.left_margin + self.max_chars_per_line * self.char_width, y), 1)
-    
     def update_cursor(self):
         # Fazer cursor piscar
         self.cursor_timer += 1
@@ -327,7 +540,7 @@ class TypewriterSimulator:
         filename = f"typewriter_output_{timestamp}.png"
         
         # Calcular dimensões necessárias
-        max_line = max([line for line, col in self.char_matrix.keys()] + [self.cursor_line])
+        max_line = max([line for line, col in self.char_matrix.keys()] + [self.cursor_line]) if self.char_matrix else 0
         img_width = self.left_margin + self.right_margin + self.max_chars_per_line * self.char_width
         img_height = self.top_margin + self.bottom_margin + (max_line + 1) * self.line_height
         
@@ -337,7 +550,7 @@ class TypewriterSimulator:
         
         # Tentar usar uma fonte melhor para a imagem
         try:
-            pil_font = ImageFont.truetype("CourierPrime-Regular.ttf", self.font_size)
+            pil_font = ImageFont.truetype("Pica.ttf", self.font_size)
         except:
             try:
                 pil_font = ImageFont.truetype("cour.ttf", self.font_size)  # Courier New no Windows
@@ -366,7 +579,7 @@ class TypewriterSimulator:
         
         # Salvar imagem
         img.save(filename)
-        print(f"Imagem salva como {filename}")
+        print(f"Imagem salva: {filename}")
     
     def run(self):
         running = True
